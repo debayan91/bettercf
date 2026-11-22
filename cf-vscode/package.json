@@ -1,0 +1,155 @@
+{
+  "name": "cf-vscode",
+  "displayName": "CF: Codeforces Contest Cockpit",
+  "description": "Self-contained Codeforces contest environment: statement panel, local runner and direct submission, all inside VS Code.",
+  "version": "1.0.0",
+  "publisher": "bettercf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/debayan91/bettercf.git",
+    "directory": "cf-vscode"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "codeforces",
+    "competitive programming",
+    "judge",
+    "playwright"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:cfVscode.login",
+    "onCommand:cfVscode.loadContest",
+    "onCommand:cfVscode.openProblem",
+    "onCommand:cfVscode.switchProblem",
+    "onCommand:cfVscode.runTests",
+    "onCommand:cfVscode.submit",
+    "onCommand:cfVscode.refreshSession"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Codeforces",
+      "properties": {
+        "cfVscode.handle": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Codeforces handle used for polling live verdicts through `user.status`."
+        },
+        "cfVscode.templatePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the C++ template copied into every new solution file."
+        },
+        "cfVscode.chromePath": {
+          "type": "string",
+          "default": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          "markdownDescription": "Path to a locally installed Google Chrome executable."
+        },
+        "cfVscode.compilerCommand": {
+          "type": "string",
+          "default": "g++ -std=gnu++20 -O2 -Wall -Wextra",
+          "markdownDescription": "Compile command used by the local runner (ignored when `#cfVscode.debugCommand#` is set)."
+        },
+        "cfVscode.cfCompilerId": {
+          "type": "string",
+          "default": "89",
+          "markdownDescription": "Codeforces `programTypeId` (`89` = GNU G++23 14.2 64bit, `73` = GNU G++20 11.2, `54` = GNU G++17 7.3)."
+        },
+        "cfVscode.timeoutMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 100,
+          "markdownDescription": "Per-testcase execution timeout in milliseconds."
+        },
+        "cfVscode.debugCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional. Compile with sanitizers too and run every test through this host command, e.g. `lldb --batch -o run -- ./sol`. Use `{binary}` as a placeholder for the compiled binary."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "cfVscode.login",
+        "title": "CF: Login / Refresh Session",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.refreshSession",
+        "title": "CF: Validate Session Cookies",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.loadContest",
+        "title": "CF: Load Contest",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.openProblem",
+        "title": "CF: Open Problem",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.switchProblem",
+        "title": "CF: Switch Problem",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.runTests",
+        "title": "CF: Run Tests",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.submit",
+        "title": "CF: Submit Solution",
+        "category": "CF"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cfVscode.runTests",
+        "key": "ctrl+shift+r",
+        "mac": "cmd+shift+r",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "cfVscode.submit",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test:build": "node esbuild.test.mjs",
+    "test": "npm run typecheck && npm run compile && npm run test:build && node out/test-all.js && npm run test:smoke",
+    "verify": "npm run test",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package",
+    "test:smoke": "node esbuild.smoke.mjs && node out/test-smoke.js",
+    "preview": "node esbuild.preview.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.65.1"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/katex": "^0.16.8",
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^31.0.1",
+    "katex": "^0.16.11",
+    "typescript": "^5.7.3"
+  }
+}
