@@ -142,7 +142,7 @@ export class Submitter {
       const submissionId = await this.postSubmission(request, cfg);
 
       if (submissionId === undefined) {
-        this.log('Submission form was submitted but no submission id could be read.', 'yellow');
+        this.log('Submission POST returned, but acceptance was not confirmed. Check Codeforces My Submissions.', 'yellow');
       } else {
         this.log(`Submission #${submissionId} received.`, 'grey');
       }
@@ -152,6 +152,10 @@ export class Submitter {
         return { accepted: false, verdict: 'UNKNOWN', submissionId };
       }
 
+      if (submissionId === undefined && baselineId === undefined) {
+        this.log('Cannot identify the new submission safely. Check Codeforces My Submissions.', 'yellow');
+        return { accepted: false, verdict: 'UNKNOWN' };
+      }
       const outcome = await this.pollVerdict(cfg.handle, request, submissionId, baselineId);
       this.reportOutcome(outcome);
       return outcome;
@@ -202,11 +206,9 @@ export class Submitter {
     // Select the problem radio button matching the requested index.
     const problemRadio = page.locator(`input[name="submittedProblemIndex"][value="${request.index}"], input[name="submittedProblemIndex"][value="${request.index.toUpperCase()}"]`).first();
     if ((await problemRadio.count()) > 0) {
-      await problemRadio.check({ force: true }).catch(async () => {
-        await page.selectOption('select[name="submittedProblemIndex"]', request.index).catch(() => undefined);
-      });
+      await problemRadio.check({ force: true });
     } else if ((await page.locator('select[name="submittedProblemIndex"]').count()) > 0) {
-      await page.selectOption('select[name="submittedProblemIndex"]', request.index).catch(() => undefined);
+      await page.selectOption('select[name="submittedProblemIndex"]', request.index);
     } else {
       throw new Error(
         `Problem ${request.index} is not part of contest ${request.contestId}, or the contest is not open for submissions.`,
@@ -235,6 +237,8 @@ export class Submitter {
       }
       await languageSelect.selectOption(wanted);
       this.log(`Language: ${match.label.trim()} (${wanted})`, 'grey');
+    } else {
+      throw new Error('The language selector is missing; submission stopped rather than using an unknown language.');
     }
 
     // Paste the source.
@@ -252,18 +256,17 @@ export class Submitter {
     const turnstileToken = page.locator('input[name="cf-turnstile-response"]');
     if ((await turnstileToken.count()) > 0) {
       this.log('Waiting for the Cloudflare Turnstile token...', 'grey');
-      await page
-        .waitForFunction(
+      try {
+        await page.waitForFunction(
           () => {
-            const input = (globalThis as { document?: any }).document?.querySelector(
-              'input[name="cf-turnstile-response"]',
-            );
+            const input = (globalThis as unknown as { document?: { querySelector(selector: string): { value?: string } | null } }).document?.querySelector('input[name="cf-turnstile-response"]');
             return !input || String(input.value ?? '').length > 0;
-          },
-          undefined,
-          { timeout: 20_000 },
-        )
-        .catch(() => undefined);
+          }, undefined, { timeout: mode === 'headless' ? 20_000 : CHALLENGE_TIMEOUT_MS },
+        );
+      } catch {
+        if (mode === 'headless') { return { challenged: true }; }
+        throw new Error('Turnstile was not completed. No submission was sent.');
+      }
     }
 
     const submitButton = page.locator('#singlePageSubmitButton, input[value="Submit"], button[type="submit"]').first();
@@ -271,30 +274,29 @@ export class Submitter {
       throw new Error('The Codeforces submit form has no submit button; the page layout may have changed.');
     }
 
-    // The POST response is the ground truth for "did this submission happen?". It is tracked
-    // separately from the submission id so a page we cannot parse never triggers a resubmit.
-    let posted = false;
-    const responsePromise = page
-      .waitForResponse(
-        (response) => /\/submit\b/i.test(response.url()) && response.request().method() === 'POST',
-        { timeout: 60_000 },
-      )
-      .then((response) => {
-        posted = true;
-        return response;
-      })
-      .catch(() => undefined);
-
-    await Promise.all([submitButton.click({ timeout: 20_000 }), responsePromise]);
-
-    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
-
-    if (await CfBrowser.isChallenge(page)) {
-      return { challenged: true };
+    // Once click is attempted the result can be ambiguous, even if no response arrives.
+    // Never automatically retry from this point: the server may have accepted the POST.
+    const responsePromise = page.waitForResponse(
+      (response) => /\/submit\b/i.test(response.url()) && response.request().method() === 'POST',
+      { timeout: 30_000 },
+    ).catch(() => undefined);
+    try {
+      await submitButton.click({ timeout: 20_000 });
+    } catch (error) {
+      throw new Error(`Submission status is uncertain after clicking Submit. Check Codeforces My Submissions before retrying. ${error instanceof Error ? error.message : String(error)}`);
     }
-
+    const response = await responsePromise;
+    await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+    if (!response || !response.ok() || await CfBrowser.isChallenge(page)) {
+      throw new Error('Submission status is uncertain after clicking Submit. Check Codeforces My Submissions before retrying.');
+    }
+    await Submitter.checkRejection(page);
+    if (await page.locator('#sourceCode').count()) {
+      throw new Error('The submit form is still open. Submission status is uncertain; check Codeforces My Submissions before retrying.');
+    }
+    // A status table may contain old rows. Only a submission-specific URL is authoritative.
     const submissionId = await Submitter.readSubmissionId(page);
-    return { submitted: posted || submissionId !== undefined, submissionId };
+    return { submitted: true, submissionId };
   }
 
   /** Polls a visible page until Cloudflare stops challenging it, or the window closes. */
@@ -313,36 +315,19 @@ export class Submitter {
     return false;
   }
 
-  /** Reads the numeric submission id from the URL or from the status table. */
+  /** Check form errors before treating a POST response as success. */
+  private static async checkRejection(page: Page): Promise<void> {
+    const bodyText = await page.locator('body').innerText();
+    const message = /(You have submitted exactly the same code before|Daily submission limit|need to be registered|not allowed)/i.exec(bodyText)?.[0];
+    if (message) { throw new Error(`Codeforces rejected the submission: ${message}`); }
+    const errors = await page.locator('.error, .error-message, .errorMessage').allTextContents();
+    const visible = errors.map((text) => text.trim()).filter(Boolean);
+    if (visible.length) { throw new Error(`Codeforces rejected the submission: ${visible.join('; ')}`); }
+  }
+
   private static async readSubmissionId(page: Page): Promise<number | undefined> {
-    const url = page.url();
-    const urlMatch = /\/submission\/(\d+)/.exec(url);
-    if (urlMatch?.[1]) {
-      return Number.parseInt(urlMatch[1], 10);
-    }
-    const row = page.locator('table.status-frame-datatable tr[data-submission-id]').first();
-    if ((await row.count()) > 0) {
-      const attr = await row.getAttribute('data-submission-id');
-      if (attr) {
-        return Number.parseInt(attr, 10);
-      }
-    }
-    const link = page.locator('a[href*="/submission/"]').first();
-    if ((await link.count()) > 0) {
-      const href = await link.getAttribute('href');
-      const match = href ? /\/submission\/(\d+)/.exec(href) : null;
-      if (match?.[1]) {
-        return Number.parseInt(match[1], 10);
-      }
-    }
-    const bodyText = await page.locator('body').innerText().catch(() => '');
-    const message = /(You have submitted exactly the same code before|Daily submission limit|need to be registered|not allowed)/i.exec(
-      bodyText,
-    )?.[0];
-    if (message) {
-      throw new Error(`Codeforces rejected the submission: ${message}`);
-    }
-    return undefined;
+    const match = /\/submission\/(\d+)(?:[/?#]|$)/.exec(page.url());
+    return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
   }
 
   /**
@@ -360,6 +345,7 @@ export class Submitter {
       return first.submissionId;
     }
 
+    if (!first.challenged) { throw new Error('Submission was not confirmed. Check Codeforces My Submissions before retrying.'); }
     this.log('Cloudflare Turnstile blocked the headless attempt.', 'yellow');
     this.log('Re-opening the submit page in a visible Chrome window...', 'grey');
     void vscode.window.showInformationMessage(
@@ -379,7 +365,7 @@ export class Submitter {
 
     const escalated = await attempt('headed');
     if (escalated.submitted) {
-      this.log('Submission accepted from the visible window.', 'grey');
+      this.log('Submission POST returned from the visible window.', 'grey');
       return escalated.submissionId;
     }
     if (escalated.challenged) {
@@ -426,15 +412,13 @@ export class Submitter {
     if (!rows) {
       return undefined;
     }
-    const byId = submissionId !== undefined ? rows.find((row) => row.id === submissionId) : undefined;
-    if (byId) {
-      return byId;
-    }
+    if (submissionId !== undefined) { return rows.find((row) => row.id === submissionId); }
+    if (baselineId === undefined) { return undefined; }
     return rows.find(
       (row) =>
         row.problem?.index?.toUpperCase() === request.index.toUpperCase() &&
-        String(row.problem?.contestId ?? request.contestId) === request.contestId &&
-        (baselineId === undefined || row.id > baselineId),
+        String(row.problem?.contestId) === request.contestId &&
+        row.id > baselineId,
     );
   }
 

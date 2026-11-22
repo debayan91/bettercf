@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https://codeforces.com https://espresso.codeforces.com https://cdn.jsdelivr.net https: data:; style-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/katex@0.16.11/dist; font-src https://cdn.jsdelivr.net/npm/katex@0.16.11/dist data:; script-src 'nonce-47TIotWeoaerIW9ntWg0ig==' https://cdn.jsdelivr.net/npm/katex@0.16.11/dist; connect-src https://codeforces.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https://codeforces.com https://espresso.codeforces.com https: data:; style-src 'unsafe-inline' file:; font-src data: file:; script-src 'nonce-o5q9w0EtquzsW56f1NBB8A=='; connect-src https://codeforces.com">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Codeforces Statement</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-    <script nonce="47TIotWeoaerIW9ntWg0ig==" src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<title>Codeforces</title>
+<link rel="stylesheet" href="../media/katex/katex.min.css">
+    <script nonce="o5q9w0EtquzsW56f1NBB8A==" src="../media/katex/katex.min.js"></script>
 <style>
 :root {
   color-scheme: dark;
@@ -15,12 +15,13 @@
   --ink-faint: #7c7c7c;
   --bg: #0b0b0b;
   --panel: #121212;
+  --panel-2: #161616;
   --line: #2a2a2a;
   --line-strong: #3d3d3d;
   --code-bg: #171717;
   --pre-bg: #121212;
+  --accent: #ffffff;
 }
-/* Light workbench theme: same monochrome palette, inverted. No hue anywhere. */
 html:has(body.vscode-light),
 body.vscode-light {
   color-scheme: light;
@@ -29,18 +30,15 @@ body.vscode-light {
   --ink-faint: #6b6b6b;
   --bg: #ffffff;
   --panel: #f5f5f5;
+  --panel-2: #ededed;
   --line: #dedede;
   --line-strong: #b3b3b3;
   --code-bg: #f2f2f2;
   --pre-bg: #f7f7f7;
+  --accent: #000000;
 }
 * { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--ink);
-}
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
 body {
   font-family: "Roboto", "Helvetica Neue", Arial, "Segoe UI", sans-serif;
   font-size: 14.5px;
@@ -48,140 +46,99 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-#root {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 26px 26px 96px;
-}
-.doc-header {
-  border-bottom: 1px solid var(--line-strong);
-  padding-bottom: 16px;
-  margin-bottom: 22px;
-}
-.doc-title {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.32;
-  margin: 0 0 10px;
-}
-.doc-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: 11.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-.doc-meta span { border: 1px solid var(--line); padding: 2px 8px; }
-.doc-link {
-  color: var(--ink-dim);
-  text-decoration: none;
-  border-bottom: 1px solid var(--line-strong);
-  font-size: 11.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.doc-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
-.loading { color: var(--ink-faint); font-size: 13px; padding: 40px 0; }
+#root { max-width: 860px; margin: 0 auto; padding: 26px 26px 96px; }
 
-/* Codeforces document body */
+/* ------------------------------- header --------------------------------- */
+.doc-header { border-bottom: 1px solid var(--line-strong); padding-bottom: 16px; margin-bottom: 22px; }
+.doc-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.32; margin: 0 0 10px; }
+.doc-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); }
+.doc-meta span { border: 1px solid var(--line); padding: 2px 8px; }
+.doc-meta span.strong { color: var(--ink-dim); border-color: var(--line-strong); }
+
+/* ------------------------------ statement -------------------------------- */
 .problem-statement { margin: 0; }
-.problem-statement .header,
-.problem-statement .input-output-copier { display: none; }
+.problem-statement .header, .problem-statement .input-output-copier { display: none; }
 .problem-statement .section-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-dim);
-  margin: 30px 0 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-dim); margin: 30px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
 }
 .problem-statement p { margin: 0 0 14px; }
-.problem-statement ul,
-.problem-statement ol { margin: 0 0 16px; padding-left: 22px; }
+.problem-statement ul, .problem-statement ol { margin: 0 0 16px; padding-left: 22px; }
 .problem-statement li { margin: 0 0 7px; }
-.problem-statement a { color: var(--ink); border-bottom: 1px solid var(--line-strong); text-decoration: none; }
+.problem-statement a { color: var(--ink); border-bottom: 1px solid var(--line-strong); text-decoration: none; cursor: pointer; }
 .problem-statement a:hover { border-bottom-color: var(--ink); }
 .problem-statement b, .problem-statement strong { font-weight: 600; }
 .problem-statement em, .problem-statement i { font-style: italic; color: var(--ink); }
-.problem-statement img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  margin: 14px auto;
-  border: 1px solid var(--line);
-  /* Codeforces diagrams are drawn on white, so keep a light backing even in dark mode. */
-  background: #ffffff;
-  padding: 4px;
-}
+.problem-statement img { max-width: 100%; height: auto; display: block; margin: 14px auto; border: 1px solid var(--line); background: #ffffff; padding: 4px; }
 .problem-statement pre {
   font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  background: var(--pre-bg);
-  border: 1px solid var(--line);
-  padding: 12px 14px;
-  margin: 0;
-  overflow-x: auto;
-  white-space: pre;
-  tab-size: 4;
+  font-size: 13px; line-height: 1.5; background: var(--pre-bg); border: 1px solid var(--line);
+  padding: 12px 14px; margin: 0; overflow-x: auto; white-space: pre; tab-size: 4;
 }
 .problem-statement .sample-test { margin: 4px 0 18px; border: 1px solid var(--line); }
-.problem-statement .sample-test .input,
-.problem-statement .sample-test .output { padding: 0; }
+.problem-statement .sample-test .input, .problem-statement .sample-test .output { padding: 0; }
 .problem-statement .sample-test .input + .output { border-top: 1px solid var(--line); }
 .problem-statement .sample-test .title {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-  padding: 5px 14px;
+  font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint);
+  background: var(--panel); border-bottom: 1px solid var(--line); padding: 5px 14px;
 }
 .problem-statement .sample-test pre { border: 0; background: transparent; }
-.problem-statement .tex-graphics, .problem-statement .tex-formula { vertical-align: middle; }
-.problem-statement table {
-  border-collapse: collapse;
-  margin: 12px 0 16px;
-  font-size: 13.5px;
-  width: 100%;
-}
+.problem-statement table { border-collapse: collapse; margin: 12px 0 16px; font-size: 13.5px; width: 100%; }
 .problem-statement th, .problem-statement td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; }
 .problem-statement th { background: var(--panel); font-weight: 600; }
-.problem-statement blockquote {
-  margin: 14px 0;
-  padding: 2px 0 2px 14px;
-  border-left: 2px solid var(--line-strong);
-  color: var(--ink-dim);
-}
+.problem-statement blockquote { margin: 14px 0; padding: 2px 0 2px 14px; border-left: 2px solid var(--line-strong); color: var(--ink-dim); }
 .problem-statement code {
   font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 12.8px;
-  background: var(--code-bg);
-  border: 1px solid var(--line);
-  padding: 1px 5px;
+  font-size: 12.8px; background: var(--code-bg); border: 1px solid var(--line); padding: 1px 5px;
 }
-.problem-statement .property-title { color: var(--ink-dim); }
 .katex { font-size: 1.03em; }
 .katex-display { margin: 16px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
 .katex-display > .katex { color: var(--ink); }
-.katex-error { color: var(--ink); border-bottom: 1px dashed var(--line-strong); }
+.tex-fallback { font-family: "SFMono-Regular", Menlo, Consolas, monospace; background: var(--code-bg); padding: 1px 4px; }
+
+/* ------------------------------- footer ---------------------------------- */
 footer.doc-footer {
-  margin-top: 38px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  margin-top: 38px; padding-top: 14px; border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint);
 }
+footer.doc-footer button { all: unset; cursor: pointer; color: var(--ink-dim); border-bottom: 1px solid var(--line-strong); letter-spacing: 0.1em; }
+footer.doc-footer button:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* ------------------------------- states ---------------------------------- */
+.state { display: flex; flex-direction: column; gap: 18px; padding-top: 6px; }
+.state-kicker { font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); }
+.state-title { font-size: 19px; font-weight: 600; line-height: 1.35; margin: 0; }
+.state-text { color: var(--ink-dim); margin: 0; max-width: 62ch; }
+.state-code {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 12px; color: var(--ink-faint);
+  background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; margin: 0;
+  white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+}
+.state-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.state-actions button {
+  all: unset; cursor: pointer; font: inherit; font-size: 13px; padding: 7px 14px;
+  border: 1px solid var(--line-strong); color: var(--ink); background: transparent;
+}
+.state-actions button:hover { background: var(--panel-2); border-color: var(--ink-dim); }
+.state-actions button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.state-actions button.primary:hover { opacity: 0.86; }
+.steps { counter-reset: step; display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.steps li { counter-increment: step; display: flex; gap: 12px; align-items: flex-start; color: var(--ink-dim); }
+.steps li::before {
+  content: counter(step); flex: 0 0 auto; width: 20px; height: 20px; line-height: 19px; text-align: center;
+  font-size: 11px; color: var(--ink); border: 1px solid var(--line-strong); margin-top: 2px;
+}
+.steps li b { color: var(--ink); font-weight: 600; }
+
+/* skeleton */
+.skeleton { display: flex; flex-direction: column; gap: 12px; }
+.sk-bar { height: 12px; background: var(--panel); border: 1px solid var(--line); animation: pulse 1.5s ease-in-out infinite; }
+.sk-bar.w40 { width: 40%; } .sk-bar.w70 { width: 70%; } .sk-bar.w90 { width: 90%; } .sk-bar.w60 { width: 60%; }
+.sk-block { height: 120px; background: var(--panel); border: 1px solid var(--line); animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.sk-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
+@media (prefers-reduced-motion: reduce) { .sk-bar, .sk-block { animation: none; opacity: 0.8; } }
 </style>
 </head>
 <body>
@@ -192,7 +149,8 @@ footer.doc-footer {
   <div class="doc-meta">
     <span>2 seconds</span>
     <span>256 megabytes</span>
-    <span>2045 / C</span>
+    <span class="strong">2045 / C</span>
+    <span>1 sample</span>
   </div>
 </div>
 
@@ -216,21 +174,22 @@ footer.doc-footer {
 
 </article>
 <footer class="doc-footer">
-  <a class="doc-link" href="https://codeforces.com/contest/2045/problem/C">open on codeforces</a>
-  <span>cf-vscode</span>
+  <a href="https://codeforces.com/contest/2045/problem/C">open on codeforces</a>
+  <button data-cf-action="refresh">refetch statement</button>
 </footer></div>
-<script nonce="47TIotWeoaerIW9ntWg0ig==">
+<script nonce="o5q9w0EtquzsW56f1NBB8A==">
 (function () {
   'use strict';
   var root = document.getElementById('root');
   if (!root) { return; }
 
-  // acquireVsCodeApi may only be called once per document.
   var vscodeApi = null;
   try {
     if (typeof acquireVsCodeApi === 'function') { vscodeApi = acquireVsCodeApi(); }
-  } catch (error) {
-    vscodeApi = null;
+  } catch (error) { vscodeApi = null; }
+
+  function post(message) {
+    if (vscodeApi) { vscodeApi.postMessage(message); }
   }
 
   function walk(node) {
@@ -243,8 +202,8 @@ footer.doc-footer {
         var tag = child.tagName.toLowerCase();
         if (tag === 'script' || tag === 'style' || tag === 'noscript') {
           // skip
-        } else if (child.classList && child.classList.contains('katex')) {
-          // already rendered
+        } else if (child.classList && (child.classList.contains('katex') || child.classList.contains('tex-fallback'))) {
+          // already handled
         } else {
           walk(child);
         }
@@ -255,15 +214,13 @@ footer.doc-footer {
 
   function convert(textNode) {
     var text = textNode.nodeValue;
-    if (!text || text.indexOf('$') === -1) { return 0; }
+    if (!text || text.indexOf('$') === -1) { return; }
     var pattern = /\$\$\$\$\$\$\s*([\s\S]+?)\s*\$\$\$\$\$\$|\$\$\$\$([\s\S]+?)\$\$\$\$|\$\$\$([\s\S]+?)\$\$\$/g;
     var fragment = document.createDocumentFragment();
     var lastIndex = 0;
     var produced = 0;
     var match;
     while ((match = pattern.exec(text)) !== null) {
-      // Group 1: $$$$$$ ... $$$$$$ (display)   Group 2: $$$$ ... $$$$ (display)
-      // Group 3: $$$ ... $$$ (inline)
       var display = match[1] !== undefined || match[2] !== undefined;
       var tex = String(match[1] !== undefined ? match[1] : match[2] !== undefined ? match[2] : match[3] || '').trim();
       if (match.index > lastIndex) {
@@ -272,19 +229,16 @@ footer.doc-footer {
       var holder = document.createElement(display ? 'div' : 'span');
       if (display) { holder.className = 'katex-display'; }
       var ok = false;
-      if (tex.length > 0) {
+      if (tex.length > 0 && window.katex) {
         try {
-          if (window.katex) {
-            window.katex.render(tex, holder, {
-              displayMode: display,
-              throwOnError: false,
-              strict: 'ignore',
-              trust: false,
-              output: 'html'
-            });
-            // KaTeX reports syntax problems as .katex-error nodes instead of throwing.
-            ok = holder.querySelector('.katex-error') === null && holder.textContent !== undefined;
-          }
+          window.katex.render(tex, holder, {
+            displayMode: display,
+            throwOnError: false,
+            strict: 'ignore',
+            trust: false,
+            output: 'html'
+          });
+          ok = holder.querySelector('.katex-error') === null;
         } catch (error) {
           ok = false;
         }
@@ -292,26 +246,25 @@ footer.doc-footer {
       if (ok) {
         fragment.appendChild(holder);
       } else {
-        // Unparseable content is shown verbatim so no information is lost.
-        fragment.appendChild(document.createTextNode(match[0]));
+        // No KaTeX (or bad TeX): show the source in monospace instead of raw $$$ noise.
+        var fallback = document.createElement(display ? 'div' : 'span');
+        fallback.className = 'tex-fallback';
+        fallback.textContent = tex;
+        fragment.appendChild(fallback);
       }
       lastIndex = pattern.lastIndex;
       produced += 1;
     }
-    if (produced === 0) { return 0; }
+    if (produced === 0) { return; }
     if (lastIndex < text.length) {
       fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
     }
     textNode.parentNode.replaceChild(fragment, textNode);
-    return produced;
   }
 
-  // Give bundled sample images a stable frame and drop copy widgets Codeforces injects.
   function tidy() {
     var copyButtons = root.querySelectorAll('.input-output-copier, .copy-button');
-    for (var i = 0; i < copyButtons.length; i += 1) {
-      copyButtons[i].style.display = 'none';
-    }
+    for (var i = 0; i < copyButtons.length; i += 1) { copyButtons[i].style.display = 'none'; }
   }
 
   tidy();
@@ -324,23 +277,26 @@ footer.doc-footer {
       if (window.katex) {
         clearInterval(timer);
         walk(root);
-      } else if (attempts > 40) {
+      } else if (attempts > 30) {
         clearInterval(timer);
+        walk(root);
       }
     }, 100);
   }
 
-  window.addEventListener('message', function (event) {
-    var message = event.data || {};
-    if (message.type === 'statement') { window.location.reload(); }
-  });
-
   document.addEventListener('click', function (event) {
-    var anchor = event.target && event.target.closest ? event.target.closest('a') : null;
+    var target = event.target;
+    if (!target || !target.closest) { return; }
+    var action = target.closest('[data-cf-action]');
+    if (action) {
+      event.preventDefault();
+      post({ type: 'action', action: action.getAttribute('data-cf-action') });
+      return;
+    }
+    var anchor = target.closest('a');
     if (anchor && anchor.getAttribute('href')) {
       event.preventDefault();
-      var href = anchor.getAttribute('href');
-      if (vscodeApi) { vscodeApi.postMessage({ type: 'openLink', url: href }); }
+      post({ type: 'openLink', url: anchor.getAttribute('href') });
     }
   }, true);
 })();

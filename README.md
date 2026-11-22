@@ -7,7 +7,7 @@ See [`cf-vscode/README.md`](cf-vscode/README.md) for installation, configuration
 ```bash
 cd cf-vscode
 npm install
-npm test        # typecheck + bundle + 30 headless checks (real g++ compile/run included)
+npm test        # typecheck + bundle + headless checks (real g++ compile/run included)
 ```
 
 Press **F5** in VS Code with `cf-vscode/` open to launch the Extension Development Host, or

@@ -32,5 +32,5 @@ export function renderPreview(): string {
     { contestId: '2045', index: 'C', kind: 'contest' },
     'https://codeforces.com/contest/2045/problem/C',
   );
-  return buildStatementHtml(statement);
+  return buildStatementHtml(statement, { katexScript: '../media/katex/katex.min.js', katexStyle: '../media/katex/katex.min.css', cspSource: 'file:' });
 }

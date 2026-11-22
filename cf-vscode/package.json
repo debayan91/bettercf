@@ -30,7 +30,8 @@
     "onCommand:cfVscode.switchProblem",
     "onCommand:cfVscode.runTests",
     "onCommand:cfVscode.submit",
-    "onCommand:cfVscode.refreshSession"
+    "onCommand:cfVscode.refreshSession",
+    "onStartupFinished"
   ],
   "contributes": {
     "configuration": {
@@ -48,8 +49,8 @@
         },
         "cfVscode.chromePath": {
           "type": "string",
-          "default": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          "markdownDescription": "Path to a locally installed Google Chrome executable."
+          "default": "",
+          "markdownDescription": "Optional path to Chrome, Edge or Chromium. Leave empty to detect it automatically."
         },
         "cfVscode.compilerCommand": {
           "type": "string",
@@ -108,6 +109,21 @@
       {
         "command": "cfVscode.submit",
         "title": "CF: Submit Solution",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.start",
+        "title": "Open Command Center",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.doctor",
+        "title": "Check Setup",
+        "category": "CF"
+      },
+      {
+        "command": "cfVscode.refreshProblem",
+        "title": "Refresh Problem Statement",
         "category": "CF"
       }
     ],

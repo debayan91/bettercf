@@ -59,8 +59,8 @@ export function readSetting<T>(key: keyof CfConfig): T | undefined {
 /** Persists a setting into the workspace configuration, creating it if needed. */
 export async function updateSetting(key: keyof CfConfig, value: unknown): Promise<void> {
   const section = vscode.workspace.getConfiguration(CONFIG_SECTION);
-  const inspected = section.inspect(key);
-  const target =
-    inspected?.workspaceValue === undefined ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Workspace;
+  const target = vscode.workspace.workspaceFolders?.length
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
   await section.update(key, value, target);
 }

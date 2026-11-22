@@ -25,8 +25,11 @@ import {
 } from '../src/runner';
 import { applyCockpitLayout } from '../src/layout';
 import { readConfig } from '../src/config';
-import type { CfBrowser } from '../src/cfBrowser';
-import { buildLoadingHtml, buildStatementHtml, KATEX_RUNNER } from '../src/webview';
+import { CfBrowser } from '../src/cfBrowser';
+import { Submitter } from '../src/submitter';
+import * as vscode from 'vscode';
+import { runCapture } from '../src/environment';
+import { buildErrorHtml, buildLoadingHtml, buildStatementHtml, KATEX_RUNNER } from '../src/webview';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import katex from 'katex';
 
@@ -237,7 +240,7 @@ async function run(): Promise<void> {
     assert.equal(cfg.compilerCommand, 'g++ -std=gnu++20 -O2 -Wall -Wextra');
     assert.equal(cfg.cfCompilerId, '89');
     assert.equal(cfg.timeoutMs, 3000);
-    assert.equal(cfg.chromePath, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+    assert.equal(cfg.chromePath, '');
   });
 
   section('scraper: statement cache round-trip');
@@ -316,17 +319,137 @@ async function run(): Promise<void> {
 
   rmSync(cacheRoot, { recursive: true, force: true });
 
+  section('browser: login and challenge handling');
+  await check('login validates the visible session and never starts a headless validation', async () => {
+    const browser = new CfBrowser(vscode.Uri.file('/tmp/cf-test-profile'), () => undefined);
+    const modes: string[] = [];
+    let closed = 0;
+    const page = {
+      on: () => undefined, goto: async () => undefined, isClosed: () => false,
+      title: async () => 'Codeforces', url: () => 'https://codeforces.com/',
+      locator: (selector: string) => ({ first() { return this; },
+        count: async () => selector.includes('/logout') || selector.includes('/profile/') ? 1 : 0,
+        getAttribute: async () => '/profile/tester' }),
+    };
+    const context = { pages: () => [page], newPage: async () => page };
+    const internal = browser as unknown as { ensure: (mode: string) => Promise<unknown>; closeContext: () => Promise<void> };
+    internal.ensure = async (mode) => { modes.push(mode); return context; };
+    internal.closeContext = async () => { closed++; };
+    const result = await browser.login(readConfig(), () => undefined);
+    assert.equal(result.signedIn, true);
+    assert.equal(result.handle, 'tester');
+    assert.deepEqual(modes, ['headed']);
+    assert.ok(closed >= 2);
+  });
+
+  await check('login reports closed windows and navigation failures without swallowing them', async () => {
+    const browser = new CfBrowser(vscode.Uri.file('/tmp/cf-test-profile'), () => undefined);
+    let closed = 0;
+    const page = { on: () => undefined, goto: async () => undefined };
+    const internal = browser as unknown as { ensure: () => Promise<unknown>; closeContext: () => Promise<void> };
+    internal.ensure = async () => ({ pages: () => [page], newPage: async () => page });
+    // Simulate the user closing the window after navigation.
+    let calls = 0;
+    internal.ensure = async () => ({ pages: () => ++calls === 1 ? [page] : [], newPage: async () => page });
+    internal.closeContext = async () => { closed++; };
+    const result = await browser.login(readConfig(), () => undefined);
+    assert.equal(result.state, 'signed-out');
+    assert.match(result.message, /closed/);
+    page.goto = async () => { throw new Error('network offline'); };
+    calls = 0;
+    await assert.rejects(browser.login(readConfig(), () => undefined), /Could not open codeforces/);
+    assert.ok(closed >= 4, 'context should close even on navigation errors');
+  });
+
+  await check('headless Cloudflare challenge is not reported as a signed-out session', async () => {
+    const browser = new CfBrowser(vscode.Uri.file('/tmp/cf-test-profile'), () => undefined);
+    const page = { goto: async () => undefined, title: async () => 'Just a moment...', url: () => 'https://codeforces.com/' };
+    const internal = browser as unknown as { run: (mode: string, cfg: unknown, callback: (context: unknown) => Promise<unknown>) => Promise<unknown> };
+    internal.run = async (_mode, _cfg, callback) => callback({ pages: () => [page] });
+    const result = await browser.validateSession(readConfig());
+    assert.equal(result.state, 'challenged');
+    assert.match(result.message, /Cloudflare/);
+  });
+
+  await check('browser work is never silently repeated after an error', async () => {
+    const browser = new CfBrowser(vscode.Uri.file('/tmp/cf-test-profile'), () => undefined);
+    const internal = browser as unknown as { ensure: () => Promise<unknown> };
+    internal.ensure = async () => ({});
+    let attempts = 0;
+    await assert.rejects(browser.run('headless', readConfig(), async () => {
+      attempts++;
+      throw new Error('Target page, context or browser has been closed');
+    }));
+    assert.equal(attempts, 1, 'a submission callback must not be retried implicitly');
+  });
+
+  await check('browser queue serializes concurrent commands even after failure', async () => {
+    const browser = new CfBrowser(vscode.Uri.file('/tmp/cf-test-profile'), () => undefined);
+    (browser as unknown as { ensure: () => Promise<unknown> }).ensure = async () => ({});
+    const events: string[] = [];
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const first = browser.run('headless', readConfig(), async () => { events.push('first-start'); await hold; events.push('first-end'); throw new Error('fail'); });
+    const second = browser.run('headed', readConfig(), async () => { events.push('second'); });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(events, ['first-start']);
+    release(); await assert.rejects(first); await second;
+    assert.deepEqual(events, ['first-start', 'first-end', 'second']);
+  });
+
+  await check('submission escalation never retries an ambiguous or completed attempt', async () => {
+    let attempts = 0; let challenges = 0;
+    const browser: { run: () => Promise<{ submitted?: boolean }>; resolveChallenge: () => Promise<boolean> } = { run: async () => { attempts++; return { submitted: true }; }, resolveChallenge: async () => { challenges++; return true; } };
+    const submitter = new Submitter(browser as unknown as CfBrowser, readConfig, () => new Runner(readConfig));
+    const post = (submitter as unknown as { postSubmission: (request: unknown, cfg: unknown) => Promise<unknown> }).postSubmission.bind(submitter);
+    const request = { contestId: '4', index: 'A', kind: 'contest', file: '/tmp/A.cpp' };
+    await post(request, readConfig());
+    assert.equal(attempts, 1); assert.equal(challenges, 0);
+    browser.run = async () => { attempts++; return {}; };
+    await assert.rejects(post(request, readConfig()), /not confirmed/);
+    assert.equal(attempts, 2); assert.equal(challenges, 0);
+  });
+
+  await check('Windows compiler paths retain backslashes when quoted', () => {
+    assert.deepEqual(splitCommand('"C:\\Program Files\\mingw\\g++.exe" -O2'), ['C:\\Program Files\\mingw\\g++.exe', '-O2']);
+  });
+
+  await check('verdict matching never substitutes an unrelated or old submission', () => {
+    const submitter = new Submitter({} as CfBrowser, readConfig, () => new Runner(readConfig));
+    const find = (submitter as unknown as { findRow: (rows: unknown[], req: unknown, id?: number, baseline?: number) => { id: number } | undefined }).findRow.bind(submitter);
+    const req = { contestId: '4', index: 'A' };
+    const rows = [{ id: 99, problem: { contestId: 4, index: 'A' } }];
+    assert.equal(find(rows, req, 100, 90), undefined);
+    assert.equal(find(rows, req), undefined);
+    assert.equal(find(rows, req, undefined, 99), undefined);
+    assert.equal(find(rows, req, undefined, 98)?.id, 99);
+  });
+
+  await check('empty sample output is retained and single-quoted example lines are separated', () => {
+    const html = `<div class="sample-tests"><div class="input"><pre><div class='test-example-line'>1</div><div class='test-example-line'>2</div></pre></div><div class="output"><pre></pre></div></div>`;
+    const samples = parseSamples(html);
+    assert.equal(samples[0]?.input, '1\n2\n');
+    assert.equal(samples[0]?.expected, '');
+  });
+
+  await check('failed commands are not treated as successful environment probes', async () => {
+    assert.equal(await runCapture(process.execPath, ['-e', 'console.log("g++ error"); process.exit(1)']), null);
+  });
+
   section('webview: document and KaTeX rendering');
   const statement = parseProblemPage(PROBLEM_PAGE_HTML, { contestId: '4', index: 'A', kind: 'contest' }, 'https://codeforces.com/contest/4/problem/A');
-  const docHtml = buildStatementHtml(statement);
+  const docHtml = buildStatementHtml(statement, { katexStyle: 'vscode-resource:/katex.min.css', katexScript: 'vscode-resource:/katex.min.js', cspSource: 'vscode-resource:' });
 
-  await check('embeds a strict CSP that allows codeforces and jsdelivr only', () => {
+  await check('embeds a strict CSP and loads local KaTeX', () => {
     assert.ok(docHtml.includes('Content-Security-Policy'), 'CSP meta tag missing');
     assert.ok(docHtml.includes('https://codeforces.com'), 'codeforces must be allowed for images');
     assert.ok(docHtml.includes('https://espresso.codeforces.com'), 'espresso CDN must be allowed');
-    assert.ok(docHtml.includes('https://cdn.jsdelivr.net'), 'jsdelivr must be allowed for KaTeX');
+    assert.ok(!docHtml.includes('https://cdn.jsdelivr.net'), 'KaTeX must not rely on CDN');
+    assert.ok(docHtml.includes('vscode-resource:/katex.min.js'));
+    assert.ok(docHtml.includes('style-src &') === false);
+    assert.ok(docHtml.includes('font-src data: vscode-resource:'));
     assert.ok(docHtml.includes("default-src 'none'"), 'default-src must be locked down');
-    const mainScriptIsAllowed = /script-src 'nonce-[^']+' https:\/\/cdn\.jsdelivr\.net/.test(docHtml);
+    const mainScriptIsAllowed = /script-src 'nonce-[^']+'/.test(docHtml);
     assert.ok(mainScriptIsAllowed, 'the nonce script must be allowed');
   });
 
@@ -395,6 +518,53 @@ async function run(): Promise<void> {
     assert.ok(!loading.includes('katex.min.js'));
   });
 
+  await check('error screen escapes untrusted errors and posts retry actions', () => {
+    const html = buildErrorHtml({ label: 'Problem', title: 'Failed', message: '<script>bad</script>',
+      actions: [{ id: 'retry', label: 'Try again', primary: true }] });
+    assert.ok(html.includes('&lt;script&gt;bad&lt;/script&gt;'));
+    const dom = new JSDOM(html, { runScripts: 'outside-only' });
+    const messages: unknown[] = [];
+    (dom.window as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => ({ postMessage: (message: unknown) => messages.push(message) });
+    (dom.window as unknown as { katex: unknown }).katex = katex;
+    dom.window.eval(KATEX_RUNNER);
+    (dom.window.document.querySelector('[data-cf-action="retry"]') as HTMLElement).click();
+    assert.equal((messages[0] as { action: string }).action, 'retry');
+    dom.window.close();
+  });
+
+  await check('math is readable when the local KaTeX script fails', () => {
+    const dom = new JSDOM('<div id="root"><p>Value $$$x+1$$$ and $5</p></div>', { runScripts: 'outside-only' });
+    let callback: (() => void) | undefined;
+    (dom.window as unknown as { setInterval: (fn: () => void) => number }).setInterval = (fn) => { callback = fn; return 1; };
+    dom.window.eval(KATEX_RUNNER);
+    for (let i = 0; i < 31; i++) { callback?.(); }
+    const root = dom.window.document.getElementById('root');
+    assert.equal(root?.querySelector('.tex-fallback')?.textContent, 'x+1');
+    assert.ok(root?.textContent?.includes('$5'));
+    assert.ok(!root?.textContent?.includes('$$$'));
+    dom.window.close();
+  });
+
+  await check('KaTeX and every referenced font are packaged locally', () => {
+    const css = readFileSync(path.join(process.cwd(), 'media/katex/katex.min.css'), 'utf8');
+    assert.ok(readFileSync(path.join(process.cwd(), 'media/katex/katex.min.js')).length > 1000);
+    const refs = [...css.matchAll(/url\((fonts\/[^)]+)\)/g)].map((match) => match[1]);
+    assert.ok(refs.length > 0);
+    for (const ref of refs) { assert.ok(ref); assert.ok(readFileSync(path.join(process.cwd(), 'media/katex', ref)).length > 0); }
+  });
+
+  await check('terminal buffers its initial screen until VS Code opens it', () => {
+    const pty = new RunnerPseudoTerminal();
+    const captured: string[] = [];
+    pty.onDidWrite((chunk) => captured.push(chunk));
+    pty.renderStatus({ title: '2045/A', hints: [{ key: 'Run', label: 'Run samples' }] });
+    assert.equal(captured.length, 0);
+    pty.open();
+    assert.match(captured.join(''), /2045\/A/);
+    assert.match(captured.join(''), /Run samples/);
+    pty.dispose();
+  });
+
   section('runner: real compile + execute against g++');
   const workspaceRoot = path.join(tmpdir(), `cf-vscode-test-${process.pid}`);
   rmSync(workspaceRoot, { recursive: true, force: true });
@@ -435,6 +605,7 @@ async function run(): Promise<void> {
     const pty = new RunnerPseudoTerminal();
     const captured: string[] = [];
     pty.onDidWrite((chunk) => captured.push(chunk));
+    pty.open();
     // Swap the runner's private terminal so the public API writes into our capture buffer.
     const runner = new Runner(readConfig);
     (runner as unknown as { pty: RunnerPseudoTerminal; terminal: unknown }).pty = pty;
@@ -469,6 +640,7 @@ async function run(): Promise<void> {
     const pty = new RunnerPseudoTerminal();
     const captured: string[] = [];
     pty.onDidWrite((chunk) => captured.push(chunk));
+    pty.open();
     pty.writeLine('noise');
     pty.hardReset();
     assert.ok(captured.join('').includes('\u001b[2J'), 'clear-screen escape missing');

@@ -212,11 +212,11 @@ function extractPreText(containerHtml: string): string | null {
     return null;
   }
   const inner = pre[1];
-  const lineRe = /<div[^>]*class\s*=\s*"[^"]*\btest-example-line\b[^"]*"[^>]*>([\s\S]*?)<\/div>/gi;
+  const lineRe = /<div[^>]*class\s*=\s*(['"])[^'"]*\btest-example-line\b[^'"]*\1[^>]*>([\s\S]*?)<\/div>/gi;
   const lines: string[] = [];
   let lineMatch: RegExpExecArray | null;
   while ((lineMatch = lineRe.exec(inner)) !== null) {
-    lines.push(htmlToText(lineMatch[1] ?? '').replace(/\n+$/g, ''));
+    lines.push(htmlToText(lineMatch[2] ?? '').replace(/\n+$/g, ''));
   }
   if (lines.length > 0) {
     return lines.join('\n');
@@ -249,7 +249,7 @@ export function parseSamples(statementsHtml: string): SampleTest[] {
       continue;
     }
     const sample: SampleTest = { input: normaliseTestText(inputText) };
-    if (outputText !== null && outputText.trim().length > 0) {
+    if (outputText !== null) {
       sample.expected = normaliseTestText(outputText);
     }
     samples.push(sample);
@@ -492,12 +492,12 @@ export class Scraper {
       }
       const inFile = path.join(dir, `${i + 1}.in`);
       if (!(await this.fileExists(inFile))) {
-        await fsp.writeFile(inFile, ensureTrailingNewline(sample.input), 'utf8');
+        await writeIfMissing(inFile, ensureTrailingNewline(sample.input));
         restored += 1;
       }
       const outFile = path.join(dir, `${i + 1}.out`);
       if (sample.expected !== undefined && !(await this.fileExists(outFile))) {
-        await fsp.writeFile(outFile, ensureTrailingNewline(sample.expected), 'utf8');
+        await writeIfMissing(outFile, ensureTrailingNewline(sample.expected));
         restored += 1;
       }
     }
@@ -594,11 +594,11 @@ export class Scraper {
       }
       const inFile = path.join(dir, `${i + 1}.in`);
       if (!(await this.fileExists(inFile))) {
-        await fsp.writeFile(inFile, ensureTrailingNewline(sample.input), 'utf8');
+        await writeIfMissing(inFile, ensureTrailingNewline(sample.input));
       }
       const outFile = path.join(dir, `${i + 1}.out`);
       if (sample.expected !== undefined && !(await this.fileExists(outFile))) {
-        await fsp.writeFile(outFile, ensureTrailingNewline(sample.expected), 'utf8');
+        await writeIfMissing(outFile, ensureTrailingNewline(sample.expected));
       }
     }
   }
@@ -614,23 +614,21 @@ export class Scraper {
 
   /** Scrapes a single problem statement through the persistent browser session. */
   async scrapeStatement(ref: ProblemRef): Promise<ProblemStatement> {
-    const primaryUrl = problemUrl(ref);
-    let html: string;
+    let statement: ProblemStatement;
     try {
-      html = await this.fetchPageHtml(primaryUrl, '.problem-statement');
+      const html = await this.fetchPageHtml(problemUrl(ref), '.problem-statement');
+      statement = parseProblemPage(html, ref, problemUrl(ref));
     } catch (error) {
-      // Contest vs gym ids share the same URL shape but not the same namespace; retry once
-      // with the other prefix before giving up.
       const alternateKind: ContestKind = ref.kind === 'gym' ? 'contest' : 'gym';
       const alternateRef: ProblemRef = { ...ref, kind: alternateKind };
       try {
-        html = await this.fetchPageHtml(problemUrl(alternateRef), '.problem-statement');
+        const html = await this.fetchPageHtml(problemUrl(alternateRef), '.problem-statement');
+        statement = parseProblemPage(html, alternateRef, problemUrl(alternateRef));
         ref.kind = alternateKind;
       } catch {
         throw error;
       }
     }
-    const statement = parseProblemPage(html, ref, problemUrl(ref));
     this.log(`Loaded ${ref.contestId}/${ref.index} "${statement.title}" (${statement.samples.length} samples).`);
     return statement;
   }
@@ -703,6 +701,11 @@ export class Scraper {
       await new Promise((resolve) => setTimeout(resolve, 600));
     }
   }
+}
+
+async function writeIfMissing(file: string, contents: string): Promise<void> {
+  try { await fsp.writeFile(file, contents, { encoding: 'utf8', flag: 'wx' }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') { throw error; } }
 }
 
 function ensureTrailingNewline(text: string): string {
