@@ -33,44 +33,36 @@ persistent profile.
   profile, handles the Cloudflare Turnstile interstitial by escalating headless → visible, then
   polls `user.status` every 2 s for up to 60 s while streaming live verdicts.
 
-## Install
+## Install and get started
+
+**You need:** VS Code, Google Chrome (or Chromium / Edge), and a C++ compiler such as `g++`.
+
+1. Get the `cf-vscode-1.0.0.vsix` package. In VS Code open **Extensions**, click the
+   **…** menu, choose **Install from VSIX…**, and select the file. Reload if prompted.
+2. Open a folder where your contest files should go. Click **Codeforces** in the bottom status
+   bar and choose **Check setup** to check your browser and compiler.
+3. Choose **Log in to Codeforces** from the same menu. Sign in and complete any Cloudflare
+   check in the Chrome window. The extension verifies login in that window and closes it
+   automatically when it detects your session.
+4. Choose **Load a contest** or **Open a problem**. Write your solution, then use
+   **Ctrl+Shift+R** (macOS: **Cmd+Shift+R**) to run the samples.
+
+No template or browser path is required if your browser is in a standard location: the
+extension finds it automatically and creates a minimal C++ skeleton. You can set
+`cfVscode.templatePath` if you prefer your own template, or `cfVscode.chromePath` if browser
+detection misses your installation. Your Codeforces handle is saved after login when it can
+be detected; set `cfVscode.handle` manually if needed for verdict polling.
+
+**Building the package from source** (only needed if a VSIX has not been provided):
 
 ```bash
 cd cf-vscode
-npm install
-npm run compile
+npm ci
+npm run package
 ```
 
-Then press **F5** ("Run Extension") in VS Code to launch an Extension Development Host, or
-package a `.vsix`:
-
-```bash
-npm run package          # -> cf-vscode-1.0.0.vsix
-code --install-extension cf-vscode-1.0.0.vsix
-```
-
-`vsce package` bundles `dist/extension.js` plus `playwright-core` (declared as a production
-dependency because it resolves its own helper assets at runtime — it is deliberately **not**
-inlined into the bundle).
-
-## Configure (3 required settings)
-
-| Setting | Required | Purpose |
-| --- | --- | --- |
-| `cfVscode.handle` | yes | Your Codeforces handle; used by `user.status` verdict polling. Auto-filled after a successful login. |
-| `cfVscode.templatePath` | yes | Absolute path to your C++ base template, copied verbatim into every new `{index}.cpp`. |
-| `cfVscode.chromePath` | yes | Absolute path to the Chrome binary that Playwright drives. Defaults to the macOS path. |
-
-Log in first: `CF: Login / Refresh Session` opens Chrome, and the saved `cf_clearance` cookie
-is what lets every later scrape and submission run headless.
-
-```jsonc
-{
-  "cfVscode.handle": "tourist",
-  "cfVscode.templatePath": "/Users/me/cp/template.cpp",
-  "cfVscode.chromePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-}
-```
+This creates `cf-vscode-1.0.0.vsix`, which you can install using the VS Code menu above. The
+extension does not need Node.js or npm installed on your computer after installation.
 
 Optional settings:
 
@@ -85,8 +77,8 @@ Optional settings:
 
 1. **`CF: Login / Refresh Session`** — opens Chrome at `codeforces.com/enter` with a persistent
    profile in the extension's `globalStorage`. Log in (and clear any Cloudflare check once),
-   then close the window. Cookies, including `cf_clearance`, are written to disk and reused.
-   The command verifies the session and saves your handle if `cfVscode.handle` was empty.
+   then wait for the extension to detect your login and close the window. Cookies are saved
+   in the profile. If you close it before login is detected, retry the command.
 2. **`CF: Load Contest`** — enter `2045`. Problem list comes from
    `contest.standings?from=1&count=1`, `{index}.cpp` files are created from your template
    (existing files are skipped), the contest folder is created, problem A is scraped and opened
@@ -165,7 +157,7 @@ sample has no `.out` file.
   never retried after a successful POST, so a challenge mid-flow cannot double-submit.
 - **Profile locking.** Every browser entry point goes through one queue, so a login window and a
   background pre-fetch can never race the `ProcessSingleton` lock. Stale `Singleton*` files are
-  cleaned up automatically if Chrome was killed.
+  not removed automatically: close other Chrome processes using the profile before retrying.
 - **Statement caching vs. samples.** `meta.json` owns sample numbering; `N.in` / `N.out` on disk
   are overlaid per index. Deleting or editing a file therefore cannot re-associate inputs with
   the wrong expected output.
@@ -178,7 +170,7 @@ sample has no `.out` file.
 npm run typecheck    # tsc --noEmit, strict
 npm run compile      # esbuild bundle -> dist/extension.js
 npm run watch        # rebuild on change
-npm test             # typecheck + bundle + 30 headless checks + activation smoke test
+npm test             # typecheck + bundle + tests + activation smoke test
 ```
 
 `npm test` runs the real logic outside VS Code through a minimal `vscode` stub, then loads the
@@ -192,15 +184,15 @@ actual `dist/extension.js` with `vscode` redirected to that stub and activates i
 - cache round-trips that must not touch the network, and local `.in`/`.out` edits winning;
 - **real `g++` compiles and executions**: PASS/FAIL diffing, TLE termination of a busy loop,
   runtime errors, compiler diagnostics, and the exact CRLF/ANSI terminal output;
-- activation and deactivation of the production bundle, asserting all seven commands register.
+- activation and deactivation of the production bundle, asserting the commands register.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
 | `Google Chrome was not found or is not executable` | Set `cfVscode.chromePath` (`/usr/bin/google-chrome`, `C:\Program Files\Google\Chrome\Application\chrome.exe`, ...). |
-| `The Codeforces session is not signed in` | Run `CF: Login / Refresh Session` and close the Chrome window after logging in. |
-| Cloudflare loop despite logging in | Your IP may require a fresh check: run the login command, solve the check once, close the window. |
+| `The Codeforces session is not signed in` | Run `CF: Login / Refresh Session` and wait for login to be detected. |
+| Cloudflare loop despite logging in | Your IP may require a fresh check: run the login command and solve the check. A headless challenge does not necessarily mean you are signed out. |
 | `cfVscode.cfCompilerId "89" is not offered` | Codeforces rotates language ids; the error lists currently available ids — use one of them. |
 | `No testcases found` | Re-run `CF: Open Problem` for that index (samples were never scraped), or check `.cp/{index}/`. |
 | Sample tests differ from the real judge | Your local compiler/standard differs; compare with `cfVscode.compilerCommand` or submit. |
@@ -212,12 +204,12 @@ actual `dist/extension.js` with `vscode` redirected to that stub and activates i
   workspace and never in source control. Delete that folder to sign out completely.
 - Statements are sanitised before rendering (`<script>`, `<style>`, inline handlers and
   `javascript:` URLs are stripped) and the webview runs under a strict CSP that allows only
-  `codeforces.com`, `espresso.codeforces.com` and the KaTeX CDN.
-- The extension only talks to `codeforces.com` and `cdn.jsdelivr.net`.
+  remote images and local KaTeX resources.
+- Codeforces pages and their remote images require network access. KaTeX is bundled locally.
 - Respect Codeforces' terms: scraping is paced deliberately (one statement at a time), and
   verdict polling is capped at 60 s per submission.
 
 ## Screens (synthetic)
 
-See `docs/preview.html` for a static mock of the three-column cockpit, generated from real
+See `docs/preview.html` for a synthetic static render of the statement panel, generated from real
 statement HTML by `npm run preview`.

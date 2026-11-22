@@ -50,7 +50,7 @@ const writtenChunks: string[] = [];
 
 /** Mirrors the defaults declared in package.json so readConfig() behaves identically. */
 const CONFIG_DEFAULTS: Record<string, unknown> = {
-  'cfVscode.chromePath': '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  'cfVscode.chromePath': '',
   'cfVscode.compilerCommand': 'g++ -std=gnu++20 -O2 -Wall -Wextra',
   'cfVscode.cfCompilerId': '89',
   'cfVscode.timeoutMs': 3000,
@@ -81,6 +81,7 @@ const workspace: Record<string, unknown> = {
 const window: Record<string, unknown> = {
   activeTextEditor: undefined,
   visibleTextEditors: [],
+  createStatusBarItem: () => ({ text: '', tooltip: '', command: '', show: () => undefined, dispose: () => undefined }),
   createTerminal: () => ({
     show: () => undefined,
     sendText: () => undefined,
@@ -139,3 +140,5 @@ export const env = { openExternal: async () => true };
 export interface Disposable {
   dispose(): void;
 }
+
+export const StatusBarAlignment = { Left: 1, Right: 2 };

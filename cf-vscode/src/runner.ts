@@ -49,6 +49,13 @@ export class RunnerPseudoTerminal implements vscode.Pseudoterminal {
   private readonly closeEmitter = new vscode.EventEmitter<number>();
   private disposed = false;
   private renderedLines = 0;
+  private opened = false;
+  private pending = '';
+
+  /** Approximate number of lines written since the last clear. */
+  get lineCount(): number {
+    return this.renderedLines;
+  }
 
   readonly onDidWrite: vscode.Event<string> = this.writeEmitter.event;
   readonly onDidClose: vscode.Event<number> = this.closeEmitter.event;
@@ -59,11 +66,45 @@ export class RunnerPseudoTerminal implements vscode.Pseudoterminal {
       return;
     }
     this.renderedLines += (text.match(/\n/g) ?? []).length;
-    this.writeEmitter.fire(text.replace(/\r?\n/g, '\r\n'));
+    this.emit(text.replace(/\r?\n/g, '\r\n'));
+  }
+
+  private emit(text: string): void {
+    if (!this.opened) { this.pending += text; } else { this.writeEmitter.fire(text); }
   }
 
   writeLine(text = '', style: Style = 'plain'): void {
     this.write(style === 'plain' ? `${text}\n` : `${paint(text, style)}\n`);
+  }
+
+  /**
+   * Renders the idle screen. Called on creation and after every finished batch, so the
+   * right-hand column is never an empty void: it always states the problem, the shortcuts and
+   * the last result.
+   */
+  renderStatus(view: StatusView): void {
+    this.hardReset();
+    const lines: string[] = [];
+    lines.push('');
+    lines.push(paint('  CF RUNNER', 'bold') + paint(`   ${view.title}`, 'grey'));
+    if (view.subtitle) {
+      lines.push(paint(`  ${view.subtitle}`, 'grey'));
+    }
+    lines.push('');
+    if (view.notice) {
+      lines.push(`  ${paint(view.notice.text, view.notice.style)}`);
+      lines.push('');
+    }
+    if (view.lastResult) {
+      lines.push(`  ${paint('LAST RUN', 'dim')}  ${paint(view.lastResult, view.lastResultStyle ?? 'grey')}`);
+      lines.push('');
+    }
+    lines.push(paint('  NEXT', 'dim'));
+    for (const hint of view.hints) {
+      lines.push(`    ${paint(hint.key.padEnd(18), 'cyan')} ${paint(hint.label, 'grey')}`);
+    }
+    lines.push('');
+    this.write(lines.join('\n') + '\n');
   }
 
   /** Clears the terminal when it already carries output. */
@@ -71,7 +112,7 @@ export class RunnerPseudoTerminal implements vscode.Pseudoterminal {
     if (this.disposed || this.renderedLines === 0) {
       return;
     }
-    this.writeEmitter.fire(ANSI.clear);
+    this.emit(ANSI.clear);
     this.renderedLines = 0;
   }
 
@@ -80,12 +121,13 @@ export class RunnerPseudoTerminal implements vscode.Pseudoterminal {
     if (this.disposed) {
       return;
     }
-    this.writeEmitter.fire(ANSI.clear);
+    this.emit(ANSI.clear);
     this.renderedLines = 0;
   }
 
   open(): void {
-    /* nothing to allocate */
+    this.opened = true;
+    if (this.pending) { this.writeEmitter.fire(this.pending); this.pending = ''; }
   }
 
   close(): void {
@@ -127,7 +169,7 @@ export function splitCommand(command: string): string[] {
     if (quote) {
       if (char === quote) {
         quote = null;
-      } else if (char === '\\' && quote === '"' && i + 1 < command.length) {
+      } else if (char === '\\' && quote === '"' && (command[i + 1] === '"' || command[i + 1] === '\\')) {
         i += 1;
         current += command[i] ?? '';
       } else {
@@ -149,7 +191,7 @@ export function splitCommand(command: string): string[] {
       }
       continue;
     }
-    if (char === '\\' && i + 1 < command.length) {
+    if (char === '\\' && i + 1 < command.length && /[\s'"\\]/.test(command[i + 1] ?? '')) {
       i += 1;
       current += command[i] ?? '';
       hasContent = true;
@@ -216,6 +258,9 @@ function execProcess(
     const startedAt = Date.now();
     let settled = false;
     let timedOut = false;
+    let outputLimitExceeded = false;
+    let capturedBytes = 0;
+    const maxOutputBytes = 8 * 1024 * 1024;
     const stdoutChunks: string[] = [];
     const stderrChunks: string[] = [];
 
@@ -268,15 +313,23 @@ function execProcess(
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => stdoutChunks.push(chunk));
-    child.stderr.on('data', (chunk: string) => stderrChunks.push(chunk));
+    const capture = (chunks: string[], chunk: string): void => {
+      capturedBytes += Buffer.byteLength(chunk);
+      if (capturedBytes > maxOutputBytes) {
+        if (!outputLimitExceeded) { outputLimitExceeded = true; killTree(child); }
+        return;
+      }
+      chunks.push(chunk);
+    };
+    child.stdout.on('data', (chunk: string) => capture(stdoutChunks, chunk));
+    child.stderr.on('data', (chunk: string) => capture(stderrChunks, chunk));
 
     child.on('error', (error) => {
       finish({ code: null, signal: null, spawnError: error.message });
     });
 
     child.on('close', (code, signal) => {
-      finish({ code, signal });
+      finish({ code, signal, ...(outputLimitExceeded ? { spawnError: 'Output exceeded 8 MiB; process terminated.' } : {}) });
     });
 
     if (options.stdin !== undefined) {
@@ -369,6 +422,16 @@ interface BinaryResult {
 /* Runner                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/** Everything the idle screen shows. */
+export interface StatusView {
+  title: string;
+  subtitle?: string;
+  notice?: { text: string; style: Style };
+  lastResult?: string;
+  lastResultStyle?: Style;
+  hints: Array<{ key: string; label: string }>;
+}
+
 export interface ActiveSolution {
   root: string;
   contestId: string;
@@ -390,6 +453,7 @@ export class Runner implements vscode.Disposable {
     this.subscriptions.push(
       vscode.window.onDidCloseTerminal((closed) => {
         if (closed === this.terminal) {
+          if (this.busy) { void vscode.window.showWarningMessage('CF Runner was closed during an operation; its remaining terminal output may be lost.'); }
           this.terminal = null;
           this.pty = null;
         }
@@ -424,6 +488,11 @@ export class Runner implements vscode.Disposable {
     this.pty = pty;
     this.terminal = terminal;
     return pty;
+  }
+
+  /** True once anything has been written to the current terminal. */
+  get hasContent(): boolean {
+    return (this.pty?.lineCount ?? 0) > 0;
   }
 
   /** Reveals / creates the runner in column three. */
@@ -472,10 +541,10 @@ export class Runner implements vscode.Disposable {
 
     const tests: TestCase[] = [];
     for (const entry of inputs) {
-      const input = await fs.readFile(path.join(dir, entry.name), 'utf8').catch(() => '');
+      const input = await fs.readFile(path.join(dir, entry.name), 'utf8');
       const outName = entry.name.replace(/\.in$/, '.out');
       const expected = entries.includes(outName)
-        ? await fs.readFile(path.join(dir, outName), 'utf8').catch(() => undefined)
+        ? await fs.readFile(path.join(dir, outName), 'utf8')
         : undefined;
       const label = entry.name.replace(/\.in$/, '');
       tests.push(expected === undefined ? { name: label, input } : { name: label, input, expected });
@@ -499,7 +568,7 @@ export class Runner implements vscode.Disposable {
 
     const binary = Runner.binaryPath(solution);
     // A stale binary from another platform (or a half-written one) must never be executed.
-    await fs.rm(binary, { force: true }).catch(() => undefined);
+    await fs.rm(binary, { force: true });
     const args = splitCommand(cfg.compilerCommand);
     const compiler = args.shift();
     if (!compiler) {
@@ -623,8 +692,6 @@ export class Runner implements vscode.Disposable {
     pty.writeLine();
 
     try {
-      await vscode.window.activeTextEditor?.document.save();
-
       const tests = await Runner.loadTestCases(solution);
       if (tests.length === 0) {
         pty.writeLine('No testcases found.', 'yellow');

@@ -38,6 +38,7 @@ async function main(): Promise<void> {
 
   const context = {
     subscriptions: [] as Array<{ dispose(): void }>,
+    globalState: { get: () => true, update: async () => undefined },
     extensionUri: { fsPath: path.join(__dirname, '..'), scheme: 'file' },
     globalStorageUri: { fsPath: path.join(process.cwd(), 'out', 'smoke-storage'), scheme: 'file' },
   };
@@ -46,6 +47,10 @@ async function main(): Promise<void> {
   const registered = (globalThis as Record<string, unknown>).__registeredCommands as string[] | undefined;
   assert.ok(Array.isArray(registered), 'commands were not registered');
   const expected = [
+    'cfVscode.start',
+    'cfVscode.doctor',
+    'cfVscode.refreshProblem',
+    'cfVscode.retryProblem',
     'cfVscode.login',
     'cfVscode.refreshSession',
     'cfVscode.loadContest',
