@@ -1,0 +1,25 @@
+# Keep only what the runtime needs: the bundle plus playwright-core itself.
+src/**
+test/**
+out/**
+node_modules/.bin/**
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/*.md
+node_modules/**/*.map
+docs/**
+node_modules/**/*.ts
+!node_modules/**/*.d.ts
+node_modules/playwright-core/**/README*
+esbuild.config.mjs
+esbuild.test.mjs
+esbuild.smoke.mjs
+tsconfig.json
+**/.DS_Store
+.vscode/**
+.gitignore
+**/*.vsix
+**/*.map
+docs/**
+.git/**
+.github/**
